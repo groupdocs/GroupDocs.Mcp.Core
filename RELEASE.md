@@ -11,101 +11,120 @@ All 4 packages are released together under one CalVer version.
 
 Example: `26.4.0`, `26.4.1`, `26.5.0`.
 
-## Per-release checklist
+---
 
-### 1. Prepare the changelog entry
+## Day-to-day work (no release)
 
-Add a new file under [changelog/](changelog/):
-
-```
-changelog/NNN-short-slug.md
-```
-
-Use the next sequential `NNN` and follow the frontmatter in [changelog/README.md](changelog/README.md).
-Set `version: {NEW_VERSION}` in the frontmatter.
-
-### 2. Bump versions in `build/dependencies.props`
-
-Edit [build/dependencies.props](build/dependencies.props) and update **all four** version properties to the new release number:
-
-```xml
-<GroupDocsMcpCore>{NEW_VERSION}</GroupDocsMcpCore>
-<GroupDocsMcpLocalStorage>{NEW_VERSION}</GroupDocsMcpLocalStorage>
-<GroupDocsMcpAwsS3Storage>{NEW_VERSION}</GroupDocsMcpAwsS3Storage>
-<GroupDocsMcpAzureBlobStorage>{NEW_VERSION}</GroupDocsMcpAzureBlobStorage>
-```
-
-All four must match — they release together.
-
-### 3. (Rarely) bump external dependency versions
-
-Only when needed — update the `External Dependency Versions` block in
-[build/dependencies.props](build/dependencies.props):
-
-- `MicrosoftExtensionsDependencyInjectionAbstractions`
-- `MicrosoftExtensionsLoggingAbstractions`
-- `MicrosoftExtensionsOptions`
-- `AzureStorageBlobs`
-- `AwsSdkS3`
-- `MicrosoftSourceLinkGithub`
-
-### 4. (Rarely) bump tool versions
-
-- `CodeSignTool` version — configured as a GitHub repository variable `CODE_SIGN_TOOL_VERSION` (e.g. `1.3.0`). Bump under **Settings → Secrets and variables → Actions → Variables**, not in the workflow file.
-
-### 5. Verify locally
-
-```powershell
-# Fresh build + pack all 4 packages
-./build.ps1
-
-# Confirm output
-ls build_out/*.nupkg
-# Expected: 4 .nupkg + 4 .snupkg
-```
-
-Run tests:
-```powershell
-dotnet test src/GroupDocs.Mcp.Core.sln -c Release
-```
-
-### 6. Commit
+Just push to `main`:
 
 ```bash
-git add build/dependencies.props changelog/NNN-*.md
-git commit -m "Release {NEW_VERSION}"
+git add <files>
+git commit -m "…"
 git push
 ```
 
-### 7. Wait for CI green
+`build_packages.yml` and `run_tests.yml` run on every push — `publish_prod.yml` does **not**. Commits never create a tag, a NuGet release, or a GitHub Release. Changelog updates, code edits, and version-prop bumps are all free actions — you can commit them whenever without triggering a release.
 
-`build_packages.yml` and `run_tests.yml` must pass on `main` before tagging.
+---
 
-### 8. Tag the release
+## Releasing a new version
 
-```bash
-git tag {NEW_VERSION}
-git push origin {NEW_VERSION}
+### 1. Prepare the release commit
+
+All four changes go in **one commit on `main`**:
+
+1. **Bump all four version properties** in [build/dependencies.props](build/dependencies.props). They must match — the four packages release in lockstep.
+
+   ```xml
+   <GroupDocsMcpCore>{NEW_VERSION}</GroupDocsMcpCore>
+   <GroupDocsMcpLocalStorage>{NEW_VERSION}</GroupDocsMcpLocalStorage>
+   <GroupDocsMcpAwsS3Storage>{NEW_VERSION}</GroupDocsMcpAwsS3Storage>
+   <GroupDocsMcpAzureBlobStorage>{NEW_VERSION}</GroupDocsMcpAzureBlobStorage>
+   ```
+
+2. **Add a changelog entry** — new file `changelog/NNN-short-slug.md` with `version: {NEW_VERSION}` in the frontmatter. Format in [changelog/README.md](changelog/README.md).
+
+3. *(Optional, rare)* Bump external dependency versions in the same props file — `MicrosoftExtensions*`, `AzureStorageBlobs`, `AwsSdkS3`, `MicrosoftSourceLinkGithub`.
+
+4. Commit + push:
+
+   ```bash
+   git add build/dependencies.props changelog/NNN-*.md
+   git commit -m "Release {NEW_VERSION}"
+   git push
+   ```
+
+### 2. Verify locally (optional but recommended)
+
+```powershell
+./build.ps1                                            # packs all 4 under build_out\
+dotnet test src/GroupDocs.Mcp.Core.sln -c Release      # runs tests
 ```
 
-**No `v` prefix.** The tag must match `[0-9]+\.[0-9]+\.[0-9]+`.
+### 3. Wait for CI green on `main`
 
-### 9. CI takes over
+`build_packages.yml` + `run_tests.yml` must be green before releasing.
 
-`publish_prod.yml` fires on the tag push and will:
+### 4. Trigger the release
 
-1. Build with `BUILD_TYPE=PROD`
-2. Pack all 4 .nupkg + .snupkg
-3. Sign with SSL.com eSigner (CodeSignTool)
-4. Push to NuGet.org using `NUGET_API_KEY_PROD`
-5. Create a GitHub Release with the changelog entry attached
+Two ways to release — **pick one, not both**.
 
-### 10. Post-release verification
+#### Option A — UI dispatch (no git-CLI required)
+
+1. GitHub → **Actions** → **Publish Prod** → **Run workflow** button.
+2. Leave the branch dropdown on `main`.
+3. Type the version (e.g. `26.4.0`) in the `version` input.
+4. Click **Run workflow**.
+
+The workflow validates the input matches `dependencies.props`, runs the full pipeline, and **creates the `26.4.0` tag + GitHub Release at the very end** — only if every prior step succeeded. If anything fails (bad version, signing rejected, publish error), no tag and no release are created.
+
+#### Option B — tag push (no Actions UI required)
+
+```bash
+git tag 26.4.0
+git push origin 26.4.0
+```
+
+The tag push fires the same workflow with `github.ref_name = 26.4.0`. Validation still runs (the tag name must match `dependencies.props`), rest of the pipeline is identical.
+
+> Tag must be `YY.MM.N` — no `v` prefix, no suffix. The workflow rejects anything else.
+
+### 5. CI takes over (either trigger)
+
+`publish_prod.yml` runs these steps:
+
+1. **Verify required secrets** (precheck — fails in seconds if any are missing).
+2. **Resolve + validate version** — confirms input/tag matches the four props.
+3. Build with `BUILD_TYPE=PROD` (stable version, no `-prod-xxx` suffix).
+4. Pack 4 × `.nupkg` + 4 × `.snupkg`.
+5. Sign `.nupkg` with SSL.com eSigner. Signing failures are detected via exit code **and** a file-count check.
+6. Push to NuGet.org using `NUGET_API_KEY_PROD` (`--skip-duplicate` for idempotent re-runs).
+7. **Only now** — create the GitHub Release (+ tag if it doesn't yet exist) with the changelog body + nupkg assets attached.
+
+### 6. Post-release verification
 
 - [ ] All four packages appear on nuget.org at the new version
-- [ ] NuGet listing shows signed package badge
+- [ ] NuGet listing shows the signed-package badge
 - [ ] GitHub Release is created and links to the changelog entry
-- [ ] Symbol packages (.snupkg) are present on nuget.org symbols
+- [ ] Symbol packages (`.snupkg`) are present on nuget.org symbols
+
+### 7. Re-running a failed release
+
+If something upstream failed and you need to re-run:
+
+- **Via UI**: Actions → pick the failed run → **Re-run all jobs**. (Or start a fresh Run workflow with the same version input — `dotnet nuget push --skip-duplicate` makes this safe.)
+- **Via tag**: delete and re-push the tag only if the tag was never created:
+
+  ```bash
+  git push origin :refs/tags/{VERSION}    # delete from remote if it exists
+  git tag -d {VERSION}                    # delete locally
+  git tag {VERSION}                       # re-tag HEAD
+  git push origin {VERSION}               # fires the workflow again
+  ```
+
+  **Do not re-push a tag that already has a successful release pointing at it** — that would rewrite history for downstream consumers.
+
+---
 
 ## Required GitHub secrets & variables
 
@@ -125,13 +144,15 @@ git push origin {NEW_VERSION}
 |---|---|---|
 | `CODE_SIGN_TOOL_VERSION` | `1.3.0` | CodeSignTool release tag from github.com/SSLcom/CodeSignTool |
 
+The first step of `publish_prod.yml` fails fast if any secret is missing — no CI minutes burned before the blocker is surfaced.
+
+---
+
 ## Yanking a bad release
 
-If a published version has a critical bug:
+Never re-upload the same version — nuget.org rejects replays.
 
-1. On nuget.org, unlist (don't delete) the bad packages
-2. Bump `N` in [build/dependencies.props](build/dependencies.props)
-3. Add a `type: fix` changelog entry describing the issue
-4. Tag and release the patch
-
-Do not re-upload the same version — nuget.org rejects replays.
+1. On nuget.org, **unlist** (don't delete) the bad packages.
+2. Bump `N` in [build/dependencies.props](build/dependencies.props) (e.g. `26.4.0` → `26.4.1`).
+3. Add a `type: fix` changelog entry describing the issue.
+4. Commit + push + release the patch using the normal flow above.

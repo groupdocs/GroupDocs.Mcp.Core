@@ -5,12 +5,19 @@ on:
     tags:
       - '[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (must match build/dependencies.props, e.g. 26.4.0)'
+        required: true
+        type: string
 
 jobs:
   publish_prod:
-    # Only run when triggered by a version tag (push of a tag, or "Run workflow" with a tag selected).
-    # Branch dispatches (e.g. Run workflow from `main`) are skipped so we never create a bogus tag/release.
-    if: startsWith(github.ref, 'refs/tags/')
+    # Accept either:
+    #   - tag push (github.ref starts with refs/tags/), or
+    #   - workflow_dispatch with a version input supplied.
+    # Branch dispatches without a version input are skipped so we never create a bogus tag/release.
+    if: startsWith(github.ref, 'refs/tags/') || inputs.version != ''
     runs-on: windows-latest
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: true
@@ -49,6 +56,41 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Resolve and validate version
+        id: ver
+        shell: pwsh
+        run: |
+          # Derive the effective release version.
+          # Priority: tag push (github.ref_name) → workflow_dispatch input (inputs.version).
+          $version = if ('${{ github.ref_type }}' -eq 'tag') {
+            '${{ github.ref_name }}'
+          } else {
+            '${{ inputs.version }}'
+          }
+
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            Write-Error "Version '$version' does not match YY.MM.N (e.g. 26.4.0)."
+            exit 1
+          }
+
+          # Confirm all four package version properties in dependencies.props agree with the requested version.
+          [xml]$deps = Get-Content build/dependencies.props
+          $propNames = @('GroupDocsMcpCore','GroupDocsMcpLocalStorage','GroupDocsMcpAwsS3Storage','GroupDocsMcpAzureBlobStorage')
+          $mismatches = @()
+          foreach ($name in $propNames) {
+            $node = $deps.SelectSingleNode("//$name")
+            if ($null -eq $node) { $mismatches += "<$name> not found"; continue }
+            $actual = $node.InnerText.Trim()
+            if ($actual -ne $version) { $mismatches += "<$name> = '$actual'" }
+          }
+          if ($mismatches.Count -gt 0) {
+            Write-Error "build/dependencies.props does not match requested version '$version'. Mismatches: $($mismatches -join '; '). Bump the props file, commit, and try again."
+            exit 1
+          }
+
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Releasing version: $version"
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
@@ -137,7 +179,7 @@ jobs:
         id: changelog
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
+          $tag = "${{ steps.ver.outputs.version }}"
           $entry = Get-ChildItem -Path "changelog" -Filter "*.md" |
             Where-Object { $_.Name -ne "README.md" } |
             Where-Object { (Get-Content $_.FullName -Raw) -match "version:\s*$([regex]::Escape($tag))\s*$" -or `
@@ -156,10 +198,13 @@ jobs:
           }
 
       - name: Create GitHub Release
+        # Creates the tag on workflow_dispatch runs (tag doesn't yet exist).
+        # On tag-push runs the tag already exists and this just attaches the release to it.
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
+          tag_name: ${{ steps.ver.outputs.version }}
+          name: ${{ steps.ver.outputs.version }}
+          target_commitish: ${{ github.sha }}
           body_path: ${{ steps.changelog.outputs.body_path }}
           files: artifacts/*.nupkg
           generate_release_notes: true
