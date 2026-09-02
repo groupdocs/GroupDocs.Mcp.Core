@@ -24,6 +24,10 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="$(MicrosoftExtensionsDependencyInjectionAbstractions)" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="$(MicrosoftExtensionsLoggingAbstractions)" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="$(MicrosoftExtensionsOptions)" />
+    <!-- Needed for the shared call-tool error filter and the Core-shipped
+         get_license_status tool. Products already reference the full
+         ModelContextProtocol package; Core needs only the protocol types. -->
+    <PackageReference Include="ModelContextProtocol.Core" Version="$(ModelContextProtocolCore)" />
   </ItemGroup>
 
 </Project>
