@@ -22,8 +22,15 @@ public class FileResolver : IFileResolver
         if (!string.IsNullOrEmpty(input.FilePath))
             return await ResolveFromStorage(input.FilePath, ct);
 
+        // fileName alone is the form the tool descriptions recommend ("just pass the filename the
+        // user provided") and the schema permits, so it is the natural choice for a caller — and
+        // it used to be the one form guaranteed to fail. Treat it as a storage path.
+        if (!string.IsNullOrEmpty(input.FileName))
+            return await ResolveFromStorage(input.FileName, ct);
+
         throw new ArgumentException(
-            "Provide either filePath (name in storage) or fileContent (base64) + fileName.");
+            "No file was provided. Pass filePath (the name of a file in storage), or fileContent " +
+            "(base64) together with fileName.");
     }
 
     private ResolvedFile ResolveFromContent(FileInput input)
@@ -81,17 +88,21 @@ public class FileResolver : IFileResolver
         try
         {
             var entries = await _storage.ListDirsAndFilesAsync(dirPath, ct);
-            var files = entries
-                .Where(e => !e.IsDirectory)
-                .Take(20)
-                .ToList();
+            var allFiles = entries.Where(e => !e.IsDirectory).ToList();
 
-            if (files.Count == 0)
+            if (allFiles.Count == 0)
                 return $"File '{filePath}' not found in storage. The directory is empty or does not exist.\n" +
                        "Provide the exact file name, or use fileContent to pass the file directly.";
 
+            var limit = Math.Max(1, _config.MaxListedFiles);
             var listing = string.Join("\n",
-                files.Select(f => $"- {f.FileName} ({FormatSize(f.Size)})"));
+                allFiles.Take(limit).Select(f => $"- {f.FileName} ({FormatSize(f.Size)})"));
+
+            // Never truncate silently: an unmarked cut-off reads as "the file really isn't there"
+            // and sends the caller looking in the wrong place.
+            var remaining = allFiles.Count - limit;
+            if (remaining > 0)
+                listing += $"\n...and {remaining} more";
 
             return $"File '{filePath}' not found in storage.\n\nAvailable files:\n{listing}\n\n" +
                    "Provide the exact file name, or use fileContent to pass the file directly.";
