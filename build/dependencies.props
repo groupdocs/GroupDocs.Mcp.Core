@@ -25,15 +25,16 @@
   </PropertyGroup>
 
   <PropertyGroup Label="GroupDocs MCP Core Package Versions">
-    <GroupDocsMcpCore>26.4.1</GroupDocsMcpCore>
-    <GroupDocsMcpLocalStorage>26.4.1</GroupDocsMcpLocalStorage>
-    <GroupDocsMcpAwsS3Storage>26.4.1</GroupDocsMcpAwsS3Storage>
-    <GroupDocsMcpAzureBlobStorage>26.4.1</GroupDocsMcpAzureBlobStorage>
+    <GroupDocsMcpCore>26.9.0</GroupDocsMcpCore>
+    <GroupDocsMcpLocalStorage>26.9.0</GroupDocsMcpLocalStorage>
+    <GroupDocsMcpAwsS3Storage>26.9.0</GroupDocsMcpAwsS3Storage>
+    <GroupDocsMcpAzureBlobStorage>26.9.0</GroupDocsMcpAzureBlobStorage>
   </PropertyGroup>
 
   <PropertyGroup Label="External Dependency Versions">
     <MicrosoftExtensionsDependencyInjectionAbstractions>10.0.5</MicrosoftExtensionsDependencyInjectionAbstractions>
     <MicrosoftExtensionsLoggingAbstractions>10.0.5</MicrosoftExtensionsLoggingAbstractions>
+    <ModelContextProtocolCore>1.1.0</ModelContextProtocolCore>
     <MicrosoftExtensionsOptions>10.0.5</MicrosoftExtensionsOptions>
     <AzureStorageBlobs>12.27.0</AzureStorageBlobs>
     <AwsSdkS3>4.0.19</AwsSdkS3>
