@@ -7,6 +7,22 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/main/Dotnet.gitignore
 
+# User-specific files and IDE state
+# Never publish these: they embed absolute local paths and the developer's
+# machine layout (.suo and DocumentLayout.json carry full C:\Users\... paths).
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Visual Studio cache/options directory
+.vs/
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+
 # Build results
 [Dd]ebug/
 [Dd]ebugPublic/
